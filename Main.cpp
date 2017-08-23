@@ -15,6 +15,7 @@ const double VALOR_NAO_BRANCO = 0.001;
 const int N_GRAUS = 360;
 const int LIMIAR_QUANTIZACAO = 12;
 const int TAM_MALHA_QUANTIZACAO = 5;
+const double TAM_AREA_FACE = 12300;
 
 //para a pele
 const int H_LIM_SUP_PELE = 20;
@@ -90,6 +91,56 @@ bool isCabelo(int R, int G, int B, double H, double I) {
 	return isCabelo;
 }
 
+Mat detectarComponentes(Mat imagem) {
+	//cvtColor(imagem, imagem, CV_BGR2GRAY);
+	//suaviza a imagem, removendo pontos. Tamanho da malha de suavização: 3x3
+	blur(imagem, imagem, Size(3, 3));
+	//binariza a imagem, invertendo
+	threshold(imagem, imagem, 120, 255, CV_THRESH_BINARY_INV);
+
+	vector<Point> vertices;
+	vector< vector <Point>> contornos;
+	vector<Vec4i> hierarquia;
+
+	double areaMaxima = 0;
+	double area;
+	int index = 0;
+	//encontra os contornos
+	//findContours(imagem.clone(), contornos, hierarquia, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE);
+
+	findContours(imagem.clone(), contornos, hierarquia, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE);
+	Mat desenhoContorno = Mat::zeros(imagem.size(), CV_8UC1);
+	
+	for (int i = 0; i < contornos.size(); i++) {
+		area = contourArea(contornos[i]);
+		cout << area;
+		if (area > areaMaxima) {
+			areaMaxima = area;
+			index = i;
+		}
+
+		Scalar cor(rand() % 255);
+		drawContours(desenhoContorno, contornos, i, cor);
+	}
+
+	
+
+	cout << "\n" << areaMaxima;
+
+	/*if (contornos.size() != 0){
+		for (int i = 0; i >= 0; i = hierarquia[i][0]) {
+			area = contourArea(contornos[i]);
+			cout << area;
+			if (area > areaMaxima) {
+				areaMaxima = area;
+			}
+			Scalar cor(rand() % 255);
+			drawContours(desenhoContorno, contornos, i, cor);
+		}
+	}*/
+	return desenhoContorno;
+}
+
 //um mesmo método para quantização
 //se isPele = true é quantização da pele, caso isPele = 0 é quantização do cabelo
 void quantizar(Mat imagemPele, Mat imagemCabelo) {
@@ -127,6 +178,7 @@ void quantizar(Mat imagemPele, Mat imagemCabelo) {
 		}
 	}
 }
+
 
 //detecta cabelo e pele
 void detectar(Mat imagem) {
@@ -208,12 +260,37 @@ int main() {
 	//imagem a ser usada para detectar rostos
 	//CV_8UC3
 	Mat imgEntrada = imread(caminhoImagem, 1);
-
-
-	//normalizar os valores do RGB
+	/*teste: até split*/
+	vector<Mat> BGR;
+	split(imgEntrada, BGR);
+	
+	//pipeline
 	detectar(imgEntrada);
+	quantizar(deteccaoPele, deteccaoCabelo);
+
+	Mat desenhoComp = detectarComponentes(BGR[2]);
+
+	//encontra-se áreas mínimas 
+	RotatedRect encaixotamentoPele = minAreaRect(imgQuantizadaPele);
+	RotatedRect encaixotamentoCabelo = minAreaRect(imgQuantizadaCabelo);
+
+	vector<Point> ptsIntersecaoPeleCabelo;
+	//verifica se as áreas estão intersectadas
+	int resultadoIntersecao = rotatedRectangleIntersection(encaixotamentoPele, encaixotamentoCabelo, ptsIntersecaoPeleCabelo);
+	
+	//se ao menos há uma interseção 
+	if (resultadoIntersecao != 0) {
+		if (ptsIntersecaoPeleCabelo.size() == 2 ||
+			ptsIntersecaoPeleCabelo.size() == 4 ||
+			ptsIntersecaoPeleCabelo.size() == 8) {
+				
+		}
+	}
+
+
 	//cout << "\n\n\nimagemNormal\n" << imgNormalizada;
-	imshow("imgEntrada", imgEntrada);
+	imwrite("approxComponenteCanalVermelho.png", desenhoComp);
+	imshow("imgEntrada", desenhoComp);
 	waitKey();
 
 	return 0;
