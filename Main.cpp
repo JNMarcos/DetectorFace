@@ -7,6 +7,8 @@ using namespace std;
 string caminhoImagem = "Eu.jpg";
 Mat deteccaoPele;
 Mat deteccaoCabelo;
+Mat imgQuantizadaPele;
+Mat imgQuantizadaCabelo;
 
 //constantes
 const double VALOR_NAO_BRANCO = 0.001;
@@ -90,8 +92,40 @@ bool isCabelo(int R, int G, int B, double H, double I) {
 
 //um mesmo método para quantização
 //se isPele = true é quantização da pele, caso isPele = 0 é quantização do cabelo
-void quantizar(Mat imagem, bool isPele) {
-	Mat imgQuantizada = Mat::zeros(imagem.rows/TAM_MALHA_QUANTIZACAO, imagem.cols/TAM_MALHA_QUANTIZACAO, CV_8UC1);
+void quantizar(Mat imagemPele, Mat imagemCabelo) {
+	//nº de linhas e colunas da imagem quantizada
+	int nLinhasQ = (int) (imagemPele.rows / TAM_MALHA_QUANTIZACAO);
+	int nColunasQ = (int) (imagemPele.cols / TAM_MALHA_QUANTIZACAO);
+	int nPixelsMalha = pow(TAM_MALHA_QUANTIZACAO, 2);
+
+	imgQuantizadaPele = Mat::ones(nLinhasQ, nColunasQ, CV_8UC1);
+	imgQuantizadaCabelo = Mat::ones(nLinhasQ, nColunasQ, CV_8UC1);
+	
+	Mat subMatrizPele, subMatrizCabelo;
+	int nDePixelsNaoPele, nDePixelsNaoCabelo;
+	//malha não sobreposta
+	//se não houver numa iteração TAM_MALHA_QUANTIZACAO, essas linhas são descartadas
+	//o mesmo princípio vale para 
+	for (int i = 0; i <= imagemPele.rows - TAM_MALHA_QUANTIZACAO; i = i + TAM_MALHA_QUANTIZACAO) {
+		for (int j = 0; j <= imagemPele.cols - TAM_MALHA_QUANTIZACAO; j = j + TAM_MALHA_QUANTIZACAO) {
+			//pega-se submatriz das imagens
+			subMatrizPele = imagemPele(Range(i, i + TAM_MALHA_QUANTIZACAO), Range(j, j + TAM_MALHA_QUANTIZACAO));
+			subMatrizCabelo = imagemCabelo(Range(i, i + TAM_MALHA_QUANTIZACAO), Range(j, j + TAM_MALHA_QUANTIZACAO));
+			
+			//countNonZero conta o número de não zeros
+			//como é binária, nos entrega exatamente o número de 1s
+			nDePixelsNaoPele = nPixelsMalha - countNonZero(subMatrizPele);
+			nDePixelsNaoCabelo = nPixelsMalha - countNonZero(subMatrizCabelo);
+
+				if (nDePixelsNaoPele > LIMIAR_QUANTIZACAO) {
+					imgQuantizadaPele.at<uchar>(i / TAM_MALHA_QUANTIZACAO, j / TAM_MALHA_QUANTIZACAO) = 0;
+				}
+
+				if (nDePixelsNaoCabelo > LIMIAR_QUANTIZACAO) {
+					imgQuantizadaCabelo.at<uchar>(i / TAM_MALHA_QUANTIZACAO, j / TAM_MALHA_QUANTIZACAO) = 0;
+				}
+		}
+	}
 }
 
 //detecta cabelo e pele
