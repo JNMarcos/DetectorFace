@@ -4,7 +4,7 @@
 using namespace cv;
 using namespace std;
 
-string caminhoImagem = "Modelo1.jpg";
+string caminhoImagem = "IrmãoEscovando.jpg";
 Mat imgDeteccaoPele;
 Mat imgDeteccaoCabelo;
 Mat imgQuantizadaPele;
@@ -12,8 +12,11 @@ Mat imgQuantizadaCabelo;
 Mat imgComponentePele;
 Mat imgComponenteCabelo;
 
-RotatedRect encaixotamentoPele;
-RotatedRect encaixotamentoCabelo;
+Rect encaixotamentoPele;
+Rect encaixotamentoCabelo;
+
+Point2f verticesPele;
+Point2f verticesCabelo;
 
 //constantes
 const double VALOR_NAO_BRANCO = 0.001;
@@ -31,7 +34,7 @@ const double H_LIM_INF_PELE = 4.18879;
 //para o cabelo
 const int I_LIM_SUPERIOR = 50; //antes era 80
 const int I_LIM_BRANCO = 20; //não existia
-const int LIM_BGR_CABELO = 65;
+const int LIM_BGR_CABELO = 65;//alterado , antes era 15
 const double H_LIM_SUP_CABELO = 0.698132;
 const double H_LIM_INF_CABELO = 0.349066;
 
@@ -118,7 +121,7 @@ Mat detectarComponentes(Mat imagem, bool isPele) {
 	double areaMaxima = 0;
 	double area;
 	int index = 0;
-	Mat desenhoContorno = Mat::zeros(imagem.size(), CV_8UC1);
+	Mat desenhoContorno = Mat::zeros(imagem.size(), CV_8UC3);
 
 
 	//encontra os contornos
@@ -141,20 +144,30 @@ Mat detectarComponentes(Mat imagem, bool isPele) {
 		}
 	}
 
-	Scalar cor(rand() % 255);
+	Scalar cor(rand() % VAL_MAX_CORES);
+	Scalar corRetangulo(rand() % VAL_MAX_CORES);
 	drawContours(desenhoContorno, contornos, index, cor);
 	oContorno.push_back(contornos[index]);
 
 	if (isPele) {
 		imgComponentePele = desenhoContorno;
-		encaixotamentoPele = minAreaRect(contornos[index]);
+		encaixotamentoPele = boundingRect(contornos[index]);
+		cout << "Encaixotamento Pele" << encaixotamentoPele.tl();
+		verticesPele = encaixotamentoPele.tl();
+		cout << "enc " << encaixotamentoPele.x << "\n";
+		cout << "enc y" << encaixotamentoPele.y << "\n";
+		rectangle(imgComponentePele, encaixotamentoPele, corRetangulo);
 	}
 	else {
 		imgComponenteCabelo = desenhoContorno;
-		encaixotamentoCabelo = minAreaRect(contornos[index]);
+		encaixotamentoCabelo = boundingRect(contornos[index]);
+		cout << "Encaixotamento Cabelo\n" <<encaixotamentoCabelo.tl();
+		verticesPele = encaixotamentoCabelo.tl();
+		cout << "X " << encaixotamentoCabelo.x << "\n";
+		cout << "Y " << encaixotamentoCabelo.y << "\n";
+		rectangle(imgComponenteCabelo, encaixotamentoCabelo, corRetangulo);
 	}
 
-	
 	return oContorno;
 }
 
@@ -256,9 +269,18 @@ void detectar(Mat imagem) {
 
 int main() {
 	//imagem a ser usada para detectar rostos
+	//carrega a imagem com cor
 	//CV_8UC3
-	Mat imgEntrada = imread(caminhoImagem, 1);
-	
+	Mat imgEntrada = imread(caminhoImagem, CV_LOAD_IMAGE_COLOR);
+	Rect intersecaoEntreComponentes;
+	Rect minAreaEntreComponentes;
+
+	if (!imgEntrada.data)
+	{
+		cout << "Não pôde-se abrir a imagem. Talvez esteja corrompida ou não exista na pasta." << std::endl;
+		return -1;
+	}
+
 	//pipeline
 	detectar(imgEntrada);
 	imshow("imgEntrada", imgEntrada);
@@ -275,33 +297,21 @@ int main() {
 	detectarComponentes(imgQuantizadaCabelo.clone(), false);
 	imwrite("cabeloComponente" + caminhoImagem, imgComponenteCabelo);
 
-	vector<Point> ptsIntersecaoPeleCabelo;
-	//verifica se as áreas estão intersectadas
-	int resultadoIntersecao = rotatedRectangleIntersection(encaixotamentoPele, encaixotamentoCabelo, ptsIntersecaoPeleCabelo);
-	
-	//se ao menos há uma interseção 
-	if (resultadoIntersecao != 0) {
-		cout << "Pontos "<< ptsIntersecaoPeleCabelo.size();
-		if (ptsIntersecaoPeleCabelo.size() == 2 ||
-			ptsIntersecaoPeleCabelo.size() == 4 ||
-			ptsIntersecaoPeleCabelo.size() == 6 ||
-			ptsIntersecaoPeleCabelo.size() == 8) {
-			cout << "\nDeu certo";
-			Scalar cor(rand() % 255);
-			vector< vector < Point > > pts;
-			pts.push_back(ptsIntersecaoPeleCabelo);
-			drawContours(imgDeteccaoPele, pts, 0, cor);
-			imshow("Final", imgDeteccaoPele);
-			waitKey();
-		}
-		else {
-			cout << "Quase! Ajeita esse cabelo!";
-		}
+	intersecaoEntreComponentes = encaixotamentoPele & encaixotamentoCabelo;
+	minAreaEntreComponentes = encaixotamentoPele | encaixotamentoCabelo;
+
+	if (encaixotamentoPele.area()> encaixotamentoCabelo.area()
+			&& encaixotamentoCabelo.area()/encaixotamentoPele.area() >= 1/10) {
+		cout << "Eh, pode não parecer, mas é um rosto humano";
+		rectangle(imgEntrada, minAreaEntreComponentes, Scalar(rand() % VAL_MAX_CORES, rand() % VAL_MAX_CORES, rand() % VAL_MAX_CORES));
+		rectangle(imgQuantizadaPele, minAreaEntreComponentes, Scalar(rand() % VAL_MAX_CORES));
+		imshow("Detecção Entrada", imgEntrada);//incorreta
+		imshow("Detecção Quantizada", imgQuantizadaPele);
 	}
 	else {
-		cout << "Nem ao menos há interseção.";
+		cout << "Isso pode ser tudo, menos um rosto (ou é e não percebi?)";
 	}
-
+	
 	waitKey();
 	return 0;
 }
