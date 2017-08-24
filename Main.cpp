@@ -4,40 +4,48 @@
 using namespace cv;
 using namespace std;
 
-string caminhoImagem = "Eu.jpg";
-Mat deteccaoPele;
-Mat deteccaoCabelo;
+string caminhoImagem = "Modelo1.jpg";
+Mat imgDeteccaoPele;
+Mat imgDeteccaoCabelo;
 Mat imgQuantizadaPele;
 Mat imgQuantizadaCabelo;
+Mat imgComponentePele;
+Mat imgComponenteCabelo;
+
+RotatedRect encaixotamentoPele;
+RotatedRect encaixotamentoCabelo;
 
 //constantes
 const double VALOR_NAO_BRANCO = 0.001;
-const int N_GRAUS = 360;
+const double N_GRAUS = 2 * 3.141592653589793238463;
 const int LIMIAR_QUANTIZACAO = 12;
 const int TAM_MALHA_QUANTIZACAO = 5;
-const double TAM_AREA_FACE = 12300;
+const double TAM_AREA_FACE = 30;
+const int VAL_MAX_CORES = 255;
+const int TAM_BLUR = 3;
 
 //para a pele
-const int H_LIM_SUP_PELE = 20;
-const int H_LIM_INF_PELE = 240;
+const double H_LIM_SUP_PELE = 0.60;// antes era 0.349066;
+const double H_LIM_INF_PELE = 4.18879;
 
 //para o cabelo
-const int I_LIM_SUPERIOR = 80;
-const int LIM_BGR_CABELO = 15;
-const int H_LIM_SUP_CABELO = 40;
-const int H_LIM_INF_CABELO = 20;
+const int I_LIM_SUPERIOR = 50; //antes era 80
+const int I_LIM_BRANCO = 20; //não existia
+const int LIM_BGR_CABELO = 65;
+const double H_LIM_SUP_CABELO = 0.698132;
+const double H_LIM_INF_CABELO = 0.349066;
 
 
 //calcula o limite superior
 //dado r (R normalizado)
 double f1(double r) {
-	return -1.376 * r * r + 1.0743 * r + 0.2;
+	return -1.376 * pow(r, 2) + 1.0743 * r + 0.2;
 }
 
 //calcula o limite inferior
 //dado r (R normalizado)
 double f2(double r) {
-	return -0.77 * r * r + 0.5601 * r + 0.18;
+	return -0.776 * pow(r, 2) + 0.5601 * r + 0.18;
 }
 
 //calcula o valor de w = white
@@ -49,7 +57,10 @@ double w(double r, double g) {
 //calcula o valor de arcocosseno
 //dado R, G, B
 double arcocosseno(int R, int G, int B) {
-	return acos((0.5 * ((R - G) + (R - B))) / sqrt(pow(R - G, 2) + (R - B) * (G - B)));
+	if (R == G && G == B)
+		return 200; //mantém condição segura
+	else
+		return acos((0.5 * ((R - G) + (R - B))) / sqrt(pow(R - G, 2) + (R - B) * (G - B)));
 }
 
 //calcula o valor de H
@@ -81,64 +92,70 @@ bool isPele(int R, int G, int B, double r, double g, double H) {
 }
 
 bool isCabelo(int R, int G, int B, double H, double I) {
-	//o H já foi calculado em isPele
 	bool isCabelo = false;
 	if ((I < I_LIM_SUPERIOR) &&
 			((B - G < LIM_BGR_CABELO) || (B - R < LIM_BGR_CABELO))
-				|| (H > H_LIM_INF_CABELO && H <= H_LIM_SUP_CABELO)) {
+		|| (H > H_LIM_INF_CABELO && H <= H_LIM_SUP_CABELO
+			&& I < I_LIM_BRANCO)
+				) {
 		isCabelo = true;
 	}
 	return isCabelo;
 }
 
-Mat detectarComponentes(Mat imagem) {
+Mat detectarComponentes(Mat imagem, bool isPele) {
 	//cvtColor(imagem, imagem, CV_BGR2GRAY);
-	//suaviza a imagem, removendo pontos. Tamanho da malha de suavização: 3x3
-	blur(imagem, imagem, Size(3, 3));
+	//suaviza a imagem, removendo pontos. Tamanho da malha de suavização: TAM_BLURXTAM_BLUR
+	//blur(imagem, imagem, Size(TAM_BLUR, TAM_BLUR));
 	//binariza a imagem, invertendo
-	threshold(imagem, imagem, 120, 255, CV_THRESH_BINARY_INV);
+	//threshold(imagem, imagem, 120, VAL_MAX_CORES, CV_THRESH_BINARY);
 
 	vector<Point> vertices;
 	vector< vector <Point>> contornos;
+	Mat oContorno;
 	vector<Vec4i> hierarquia;
 
 	double areaMaxima = 0;
 	double area;
 	int index = 0;
-	//encontra os contornos
-	//findContours(imagem.clone(), contornos, hierarquia, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE);
-
-	findContours(imagem.clone(), contornos, hierarquia, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE);
 	Mat desenhoContorno = Mat::zeros(imagem.size(), CV_8UC1);
-	
-	for (int i = 0; i < contornos.size(); i++) {
-		area = contourArea(contornos[i]);
-		cout << area;
-		if (area > areaMaxima) {
-			areaMaxima = area;
-			index = i;
-		}
 
-		Scalar cor(rand() % 255);
-		drawContours(desenhoContorno, contornos, i, cor);
+
+	//encontra os contornos
+	findContours(imagem.clone(), contornos, hierarquia, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE);
+
+	if (contornos.size() != 0){
+		for (int i = 0; i >= 0; i = hierarquia[i][0]) {
+			area = contourArea(contornos[i]);
+			cout << area << "\n";
+			//if (area > TAM_AREA_FACE){
+				if (area > areaMaxima) {
+					areaMaxima = area;
+					index = i;
+				}
+				
+				/*Scalar cor(rand() % 255);
+				drawContours(desenhoContorno, contornos, i, cor);
+				oContorno.push_back(contornos[i]);*/
+			//}
+		}
+	}
+
+	Scalar cor(rand() % 255);
+	drawContours(desenhoContorno, contornos, index, cor);
+	oContorno.push_back(contornos[index]);
+
+	if (isPele) {
+		imgComponentePele = desenhoContorno;
+		encaixotamentoPele = minAreaRect(contornos[index]);
+	}
+	else {
+		imgComponenteCabelo = desenhoContorno;
+		encaixotamentoCabelo = minAreaRect(contornos[index]);
 	}
 
 	
-
-	cout << "\n" << areaMaxima;
-
-	/*if (contornos.size() != 0){
-		for (int i = 0; i >= 0; i = hierarquia[i][0]) {
-			area = contourArea(contornos[i]);
-			cout << area;
-			if (area > areaMaxima) {
-				areaMaxima = area;
-			}
-			Scalar cor(rand() % 255);
-			drawContours(desenhoContorno, contornos, i, cor);
-		}
-	}*/
-	return desenhoContorno;
+	return oContorno;
 }
 
 //um mesmo método para quantização
@@ -149,8 +166,8 @@ void quantizar(Mat imagemPele, Mat imagemCabelo) {
 	int nColunasQ = (int) (imagemPele.cols / TAM_MALHA_QUANTIZACAO);
 	int nPixelsMalha = pow(TAM_MALHA_QUANTIZACAO, 2);
 
-	imgQuantizadaPele = Mat::ones(nLinhasQ, nColunasQ, CV_8UC1);
-	imgQuantizadaCabelo = Mat::ones(nLinhasQ, nColunasQ, CV_8UC1);
+	imgQuantizadaPele = Mat::ones(nLinhasQ, nColunasQ, CV_8UC1) * VAL_MAX_CORES;
+	imgQuantizadaCabelo = Mat::ones(nLinhasQ, nColunasQ, CV_8UC1) * VAL_MAX_CORES;
 	
 	Mat subMatrizPele, subMatrizCabelo;
 	int nDePixelsNaoPele, nDePixelsNaoCabelo;
@@ -198,59 +215,40 @@ void detectar(Mat imagem) {
 	double H;
 	double I;
 
-	int somaN;
+	int somaBGR;
 
 	int nColunas = imagem.cols;
 	int nLinhas = imagem.rows;
 
 	//matrizes de apenas um canal
-	deteccaoPele = Mat::zeros(nLinhas, nColunas, CV_8UC1);
-	deteccaoCabelo = Mat::zeros(nLinhas, nColunas, CV_8UC1);
+	imgDeteccaoPele = Mat::zeros(nLinhas, nColunas, CV_8UC1);
+	imgDeteccaoCabelo = Mat::zeros(nLinhas, nColunas, CV_8UC1);
 	
-	if (imagem.isContinuous()) {
-		nColunas *= nLinhas;
-		nLinhas = 1;
-	}
-	
-	//para ter uma divisão em canais (opção 2)
-	//vector<Mat> BGR;
 	for (int i = 0; i < nLinhas; i++) {
-		const uchar* Mi = imagem.ptr<uchar>(i);
 		for (int j = 0; j < nColunas; j++) {
-			//falta botar i e j aqui
-			bgr = imagem.at<Vec3b>(100, 9);
-
-			/*
-			//divide a imagem em planos, no caso, 3
-			split(imagem, BGR);
-			azul = (int)BGR[0].at<uchar>(1, 1);
-			verde = (int)BGR[1].at<uchar>(1, 1);
-			vermelho = (int)BGR[2].at<uchar>(1, 1);
-			*/
+			bgr = imagem.at<Vec3b>(i,j);
 
 			//pega a intensidade dos valores BGR
 			B = (int) bgr.val[0];
 			G = (int)bgr.val[1];
 			R = (int) bgr.val[2];
 
-			somaN = B + G + R;
+			somaBGR = B + G + R;
 
-			r = R / somaN;
-			g = G / somaN;
+			r = ((double) R / somaBGR);
+			g = ((double) G / somaBGR);
 
 			H = h(R, G, B);
 			I = intensidade(R, G, B);
 
-			cout << B << " verde " << G << " verm " << R << " soma = " << B + G + R;	
-
-			//se é true, então é pele, logo põe 1
+			//se é true, então é pele, logo põe VAL_MAX_CORES
 			if (isPele(R, G, B, r, g, H)) {
-				deteccaoPele.at<uchar>(i, j) = 1;
+				imgDeteccaoPele.at<uchar>(i, j) = VAL_MAX_CORES;
 			}
 
-			//se true, é cabelo, logo põe 1
+			//se true, é cabelo, logo põe VAL_MAX_CORES
 			if (isCabelo(R, G, B, H, I)) {
-				deteccaoCabelo.at<uchar>(i, j) = 1;
+				imgDeteccaoCabelo.at<uchar>(i, j) = VAL_MAX_CORES;
 			}
 		}
 	}
@@ -260,19 +258,22 @@ int main() {
 	//imagem a ser usada para detectar rostos
 	//CV_8UC3
 	Mat imgEntrada = imread(caminhoImagem, 1);
-	/*teste: até split*/
-	vector<Mat> BGR;
-	split(imgEntrada, BGR);
 	
 	//pipeline
 	detectar(imgEntrada);
-	quantizar(deteccaoPele, deteccaoCabelo);
+	imshow("imgEntrada", imgEntrada);
+	imwrite("imgPeleDetectada" + caminhoImagem, imgDeteccaoPele);
+	imwrite("imgCabeloDetectado" + caminhoImagem, imgDeteccaoCabelo);
 
-	Mat desenhoComp = detectarComponentes(BGR[2]);
+	quantizar(imgDeteccaoPele, imgDeteccaoCabelo);
+	imwrite("peleQuantizada" + caminhoImagem, imgQuantizadaPele);
+	imwrite("cabeloQuantizada" + caminhoImagem, imgQuantizadaCabelo);
 
-	//encontra-se áreas mínimas 
-	RotatedRect encaixotamentoPele = minAreaRect(imgQuantizadaPele);
-	RotatedRect encaixotamentoCabelo = minAreaRect(imgQuantizadaCabelo);
+	detectarComponentes(imgQuantizadaPele.clone(), true);
+	imwrite("peleComponente" + caminhoImagem, imgComponentePele);
+
+	detectarComponentes(imgQuantizadaCabelo.clone(), false);
+	imwrite("cabeloComponente" + caminhoImagem, imgComponenteCabelo);
 
 	vector<Point> ptsIntersecaoPeleCabelo;
 	//verifica se as áreas estão intersectadas
@@ -280,18 +281,27 @@ int main() {
 	
 	//se ao menos há uma interseção 
 	if (resultadoIntersecao != 0) {
+		cout << "Pontos "<< ptsIntersecaoPeleCabelo.size();
 		if (ptsIntersecaoPeleCabelo.size() == 2 ||
 			ptsIntersecaoPeleCabelo.size() == 4 ||
+			ptsIntersecaoPeleCabelo.size() == 6 ||
 			ptsIntersecaoPeleCabelo.size() == 8) {
-				
+			cout << "\nDeu certo";
+			Scalar cor(rand() % 255);
+			vector< vector < Point > > pts;
+			pts.push_back(ptsIntersecaoPeleCabelo);
+			drawContours(imgDeteccaoPele, pts, 0, cor);
+			imshow("Final", imgDeteccaoPele);
+			waitKey();
+		}
+		else {
+			cout << "Quase! Ajeita esse cabelo!";
 		}
 	}
+	else {
+		cout << "Nem ao menos há interseção.";
+	}
 
-
-	//cout << "\n\n\nimagemNormal\n" << imgNormalizada;
-	imwrite("approxComponenteCanalVermelho.png", desenhoComp);
-	imshow("imgEntrada", desenhoComp);
 	waitKey();
-
 	return 0;
 }
