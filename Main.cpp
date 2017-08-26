@@ -4,7 +4,7 @@
 using namespace cv;
 using namespace std;
 
-string caminhoImagem = "IrmãoEscovando.jpg";
+string caminhoImagem = "Modelo23.jpg";
 Mat imgDeteccaoPele;
 Mat imgDeteccaoCabelo;
 Mat imgQuantizadaPele;
@@ -28,7 +28,7 @@ const int VAL_MAX_CORES = 255;
 const int TAM_BLUR = 3;
 
 //para a pele
-const double H_LIM_SUP_PELE = 0.60;// antes era 0.349066;
+const double H_LIM_SUP_PELE = 0.6;// antes era 0.349066;
 const double H_LIM_INF_PELE = 4.18879;
 
 //para o cabelo
@@ -122,7 +122,6 @@ Mat detectarComponentes(Mat imagem, bool isPele) {
 	double area;
 	int index = 0;
 	Mat desenhoContorno = Mat::zeros(imagem.size(), CV_8UC3);
-
 
 	//encontra os contornos
 	findContours(imagem.clone(), contornos, hierarquia, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE);
@@ -283,7 +282,6 @@ int main() {
 
 	//pipeline
 	detectar(imgEntrada);
-	imshow("imgEntrada", imgEntrada);
 	imwrite("imgPeleDetectada" + caminhoImagem, imgDeteccaoPele);
 	imwrite("imgCabeloDetectado" + caminhoImagem, imgDeteccaoCabelo);
 
@@ -300,16 +298,22 @@ int main() {
 	intersecaoEntreComponentes = encaixotamentoPele & encaixotamentoCabelo;
 	minAreaEntreComponentes = encaixotamentoPele | encaixotamentoCabelo;
 
-	if (encaixotamentoPele.area()> encaixotamentoCabelo.area()
-			&& encaixotamentoCabelo.area()/encaixotamentoPele.area() >= 1/10) {
+	if (encaixotamentoPele.area()> encaixotamentoCabelo.area()/2
+			) {
 		cout << "Eh, pode não parecer, mas é um rosto humano";
-		rectangle(imgEntrada, minAreaEntreComponentes, Scalar(rand() % VAL_MAX_CORES, rand() % VAL_MAX_CORES, rand() % VAL_MAX_CORES));
+		int x = encaixotamentoPele.x * 5;
+		int y = encaixotamentoPele.y * 5;
+		int altura = encaixotamentoPele.height * 5;
+		int largura = encaixotamentoPele.width * 5;
+		Rect minImagemOriginal = Rect(x, y, largura, altura);
+
+		rectangle(imgEntrada, minImagemOriginal, Scalar(rand() % VAL_MAX_CORES, rand() % VAL_MAX_CORES, rand() % VAL_MAX_CORES));
+		imshow("Detecção Rosto de Entrada", imgEntrada);	
+		imwrite("imgFinal" + caminhoImagem, imgEntrada);
 		rectangle(imgQuantizadaPele, minAreaEntreComponentes, Scalar(rand() % VAL_MAX_CORES));
-		imshow("Detecção Entrada", imgEntrada);//incorreta
-		imshow("Detecção Quantizada", imgQuantizadaPele);
 	}
 	else {
-		cout << "Isso pode ser tudo, menos um rosto (ou é e não percebi?)";
+		cout << "Isso pode ser tudo, menos um rosto (ou eh e nao percebi?)";
 	}
 	
 	waitKey();
